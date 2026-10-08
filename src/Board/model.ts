@@ -34,10 +34,12 @@ export function recolor(territory: Territory, grey: [number, number, number]): v
 function setPixel(territory: Territory, pixelIndex: number, ownerCode: number): void {
   territory.owner[pixelIndex] = ownerCode;
   const channel = PALETTE[ownerCode];
+  // 斜织暗纹
+  const weave = ((pixelIndex % boardWidth) + ((pixelIndex / boardWidth) | 0)) % 4 === 0 ? 0.88 : 1;
   const channelStart = pixelIndex << 2;
-  territory.buffer[channelStart] = channel[0];
-  territory.buffer[channelStart + 1] = channel[1];
-  territory.buffer[channelStart + 2] = channel[2];
+  territory.buffer[channelStart] = channel[0] * weave;
+  territory.buffer[channelStart + 1] = channel[1] * weave;
+  territory.buffer[channelStart + 2] = channel[2] * weave;
   territory.buffer[channelStart + 3] = ownerCode ? 255 : 0;
   const rowIndex = (pixelIndex / boardWidth) | 0;
   if (rowIndex < territory.minY) territory.minY = rowIndex;
@@ -217,6 +219,7 @@ function convert(world: World, baseBall: BaseBall, posX: number, posY: number, r
     base.captured += gained;
     world.captures += gained;
     baseBall.value = Math.max(0, baseBall.value - gained / TUNE.unitPixels);
+    if (enemy > 0 && Math.random() < 0.05) burst(world.boardEffects, 'paint', posX, posY, team, 2, 130);
   }
   return gained;
 }
@@ -283,6 +286,7 @@ export function stepFiring(world: World): void {
         const corner = baseCorner(team);
         addRing(world.boardEffects, corner.posX, corner.posY, team, 260, 6, 0.42);
         burst(world.boardEffects, 'glow', corner.posX, corner.posY, team, 2, 110, 10, 0.34);
+        burst(world.boardEffects, 'sparkle', corner.posX, corner.posY, team, 4, 70, 6, 0.6);
       }
       continue;
     }
@@ -315,6 +319,8 @@ export function stepFiring(world: World): void {
     });
     cannon.flash = 1;
     burst(world.boardEffects, 'glow', corner.posX, corner.posY, team, 1, 80, 6, 0.2);
+    addRing(world.boardEffects, corner.posX, corner.posY, team, 46, 1.6, 0.2);
+    burst(world.boardEffects, 'sparkle', corner.posX, corner.posY, team, 1, 60, 5, 0.4);
     order.value -= value;
     base.pending -= value;
     world.firedUnits += value;
@@ -350,6 +356,7 @@ function strike(world: World, baseBall: BaseBall): boolean {
     baseBall.prevY = baseBall.posY;
     addRing(world.boardEffects, baseBall.posX, baseBall.posY, team, 360, 5, 0.3);
     burst(world.boardEffects, 'spark', baseBall.posX, baseBall.posY, team, 2, 240);
+    burst(world.boardEffects, 'shard', baseBall.posX, baseBall.posY, team, 2, 220);
     if (base.guard <= 0) collapse(world, team);
     return true;
   }
@@ -553,6 +560,8 @@ function collapse(world: World, team: number): void {
   burst(world.boardEffects, 'spark', corner.posX, corner.posY, team, 16, 720);
   burst(world.boardEffects, 'glow', corner.posX, corner.posY, team, 8, 300, 26, 1.0);
   burst(world.boardEffects, 'debris', corner.posX, corner.posY, team, 8, 400);
+  burst(world.boardEffects, 'shard', corner.posX, corner.posY, team, 10, 520);
+  burst(world.boardEffects, 'sparkle', corner.posX, corner.posY, team, 12, 260, 8, 0.8);
   world.flash = 0.8;
   world.flashTeam = team;
   for (const baseBall of world.baseBalls) {
@@ -576,6 +585,8 @@ export function checkEnd(world: World): void {
     const corner = baseCorner(last);
     addRing(world.boardEffects, corner.posX, corner.posY, last, 820, 13, 1.3);
     burst(world.boardEffects, 'glow', boardWidth / 2, boardHeight / 2, last, 18, 240, 26, 1.1);
+    burst(world.boardEffects, 'sparkle', boardWidth / 2, boardHeight / 2, last, 16, 200, 10, 1.2);
+    burst(world.boardEffects, 'shard', boardWidth / 2, boardHeight / 2, last, 12, 360);
     world.flash = 0.6;
     world.flashTeam = last;
   } else if (alive === 0) {

@@ -315,6 +315,10 @@ export function stepCounter(world: World, stepSec: number): void {
   const counter = world.counter;
   for (const shape of counter.pegs) shape.flash = Math.max(0, shape.flash - stepSec * FLASH_FADE);
   for (const slot of counter.slots) slot.flash = Math.max(0, slot.flash - stepSec * FLASH_FADE);
+  // 氛围余烬
+  if (world.stepCount % 46 === 0) {
+    burst(world.counterEffects, 'ember', Math.random() * counterWidth, counterHeight * (0.35 + Math.random() * 0.6), Math.floor(Math.random() * 4), 1, 18, 3, 1.7);
+  }
   const boxList = counter.boxes;
   const rampList = counter.ramps;
   for (const ball of counter.balls) {
@@ -372,6 +376,7 @@ export function stepCounter(world: World, stepSec: number): void {
         ball.settledPegs.push(peg);
         ball.carry = ball.carry * peg.multiplier;
         burst(world.counterEffects, 'spark', peg.posX, peg.posY, ball.team, 6, 190);
+        burst(world.counterEffects, 'sparkle', peg.posX, peg.posY, ball.team, 3, 70, 6, 0.5);
         addRing(world.counterEffects, peg.posX, peg.posY, ball.team, 110, 2.2, 0.26);
       }
     }
@@ -453,6 +458,7 @@ export function stepCounter(world: World, stepSec: number): void {
       second.velY += (impulse / secondMass) * normalY;
       first.squash = Math.min(0.45, -closingSpeed / SQUASH_SCALE);
       second.squash = first.squash;
+      burst(world.counterEffects, 'spark', (first.posX + second.posX) / 2, (first.posY + second.posY) / 2, first.team, 2, 120);
     }
   }
   for (const ball of counter.balls) {
@@ -482,6 +488,8 @@ export function stepCounter(world: World, stepSec: number): void {
         const landY = ball.posY + ball.radius;
         burst(world.counterEffects, 'spark', ball.posX, landY, ball.team, 9, 210);
         burst(world.counterEffects, 'glow', ball.posX, landY, ball.team, 4, 110, 10, 0.34);
+        burst(world.counterEffects, 'sparkle', ball.posX, landY, ball.team, 5, 90, 7, 0.55);
+        burst(world.counterEffects, 'shard', ball.posX, landY, ball.team, 3, 150);
         addRing(world.counterEffects, ball.posX, landY, ball.team, 170, 3, 0.32);
         launch(world, ball);
         burst(world.counterEffects, 'glow', ball.posX, ball.posY + 8, ball.team, 3, 130, 8, 0.3);

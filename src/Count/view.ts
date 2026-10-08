@@ -1,35 +1,245 @@
 // 计数区绘制
-import { FONT, INK, PALETTE, RAISE, TAU, TINT, clearSurface, drawCount, drawEffects, interpolateX, interpolateY, mixInk, withAlpha } from '../canvas.ts';
-import { formatCount } from '../domain.ts';
-import { HOLE_RADIUS, HOLE_Y, RAMP_RISE, counterHeight, counterWidth, holeX } from './model.ts';
+import { FONT, INK, KIND_ACCENT, PALETTE, RAISE, TAU, TINT, clearSurface, drawCount, drawEffects, interpolateX, interpolateY, mixInk, withAlpha } from '../canvas.ts';
+import { SLOT_WALL, formatCount } from '../domain.ts';
+import type { Kind } from '../domain.ts';
+import { HOLE_RADIUS, HOLE_Y, RAMP_RISE, counterHeight, counterWidth, holeX, wallFits } from './model.ts';
 import type { World } from '../domain.ts';
 import type { View } from '../canvas.ts';
-// 钉是一枚柱头
-function drawPeg(brush: CanvasRenderingContext2D, posX: number, posY: number, radius: number): void {
+// 发球孔
+function drawHole(brush: CanvasRenderingContext2D, world: World, centerX: number, occupied: number | null): void {
+  const spin = world.time * 1.4;
+  // 外圈投影
   brush.beginPath();
-  brush.ellipse(posX, posY + radius * 0.46, radius * 0.96, radius * 0.72, 0, 0, TAU);
-  brush.fillStyle = withAlpha(INK, 0.18);
+  brush.arc(centerX, HOLE_Y, HOLE_RADIUS + 5, 0, TAU);
+  brush.fillStyle = withAlpha(INK, 0.09);
   brush.fill();
+  // 金属唇环
   brush.beginPath();
-  brush.arc(posX, posY, radius + 0.35, 0, TAU);
-  brush.fillStyle = withAlpha(INK, 0.22);
-  brush.fill();
-  brush.beginPath();
-  brush.arc(posX, posY, radius, 0, TAU);
-  const metal = brush.createLinearGradient(posX - radius, posY - radius, posX + radius, posY + radius);
-  metal.addColorStop(0, PALETTE.wallLit);
-  metal.addColorStop(0.42, PALETTE.wall);
-  metal.addColorStop(1, PALETTE.lineStrong);
-  brush.fillStyle = metal;
-  brush.fill();
-  brush.strokeStyle = withAlpha(INK, 0.28);
-  brush.lineWidth = Math.max(0.8, radius * 0.13);
+  brush.arc(centerX, HOLE_Y, HOLE_RADIUS + 2.2, 0, TAU);
+  brush.strokeStyle = PALETTE.wall;
+  brush.lineWidth = 3.4;
   brush.stroke();
   brush.beginPath();
-  brush.ellipse(posX - radius * 0.24, posY - radius * 0.28, radius * 0.43, radius * 0.22, -0.5, Math.PI, TAU);
-  brush.strokeStyle = withAlpha(RAISE, 0.72);
-  brush.lineWidth = Math.max(0.8, radius * 0.12);
+  brush.arc(centerX, HOLE_Y, HOLE_RADIUS + 3.8, 0, TAU);
+  brush.strokeStyle = withAlpha(RAISE, 0.6);
+  brush.lineWidth = 1;
   brush.stroke();
+  // 孔腔
+  brush.beginPath();
+  brush.arc(centerX, HOLE_Y, HOLE_RADIUS, 0, TAU);
+  brush.fillStyle = PALETTE.cavity;
+  brush.fill();
+  const shade = brush.createLinearGradient(0, HOLE_Y - HOLE_RADIUS, 0, HOLE_Y + HOLE_RADIUS);
+  shade.addColorStop(0, withAlpha(INK, 0.32));
+  shade.addColorStop(0.62, withAlpha(INK, 0.02));
+  brush.beginPath();
+  brush.arc(centerX, HOLE_Y, HOLE_RADIUS, 0, TAU);
+  brush.fillStyle = shade;
+  brush.fill();
+  // 孔底提亮
+  brush.beginPath();
+  brush.arc(centerX, HOLE_Y, HOLE_RADIUS - 1.4, 0.45, Math.PI - 0.45);
+  brush.strokeStyle = withAlpha(RAISE, 0.85);
+  brush.lineWidth = 1.4;
+  brush.stroke();
+  // 旋转虚线环
+  brush.setLineDash([3.5, 4.5]);
+  brush.lineDashOffset = -spin * 22;
+  brush.beginPath();
+  brush.arc(centerX, HOLE_Y, HOLE_RADIUS + 6.4, 0, TAU);
+  brush.strokeStyle = withAlpha(INK, 0.24);
+  brush.lineWidth = 1.1;
+  brush.stroke();
+  brush.setLineDash([]);
+  // 下指箭头
+  brush.strokeStyle = withAlpha(INK, 0.4);
+  brush.lineWidth = 1.4;
+  brush.lineCap = 'round';
+  for (const offset of [-4, 4]) {
+    brush.beginPath();
+    brush.moveTo(centerX + offset, HOLE_Y + HOLE_RADIUS + 3);
+    brush.lineTo(centerX + offset, HOLE_Y + HOLE_RADIUS + 7);
+    brush.lineTo(centerX + offset + (offset < 0 ? 1.6 : -1.6), HOLE_Y + HOLE_RADIUS + 5.2);
+    brush.stroke();
+  }
+  brush.lineCap = 'butt';
+  // 待发脉冲
+  if (occupied !== null) {
+    const pulse = 0.5 + 0.5 * Math.sin(world.time * 6);
+    brush.beginPath();
+    brush.arc(centerX, HOLE_Y, HOLE_RADIUS + 3.4 + pulse * 1.6, 0, TAU);
+    brush.strokeStyle = withAlpha(TINT[occupied], 0.55 + pulse * 0.3);
+    brush.lineWidth = 2;
+    brush.stroke();
+  }
+}
+// 槽口图标
+function drawSlotIcon(brush: CanvasRenderingContext2D, kind: Kind): void {
+  const accent = mixInk(KIND_ACCENT[kind]);
+  brush.strokeStyle = accent;
+  brush.fillStyle = accent;
+  brush.lineWidth = 2.4;
+  brush.lineCap = 'round';
+  brush.lineJoin = 'round';
+  if (kind === 'stream') {
+    brush.beginPath();
+    brush.moveTo(-13, -8);
+    brush.lineTo(-13, 8);
+    brush.stroke();
+    for (const [deltaX, radius] of [[-6, 2.2], [1, 2.8], [9, 3.5]] as const) {
+      brush.beginPath();
+      brush.arc(deltaX, 0, radius, 0, TAU);
+      brush.fill();
+    }
+  } else if (kind === 'spin') {
+    brush.beginPath();
+    for (let index = 0; index <= 36; index++) {
+      const angle = (index / 36) * TAU * 1.35;
+      const radius = 1.8 + (index / 36) * 11;
+      const pointX = Math.cos(angle) * radius;
+      const pointY = Math.sin(angle) * radius;
+      if (index) brush.lineTo(pointX, pointY);
+      else brush.moveTo(pointX, pointY);
+    }
+    brush.stroke();
+    brush.beginPath();
+    brush.arc(Math.cos(TAU * 1.35) * 12.8, Math.sin(TAU * 1.35) * 12.8, 3.2, 0, TAU);
+    brush.fill();
+  } else if (kind === 'shield') {
+    brush.beginPath();
+    brush.moveTo(0, -13);
+    brush.lineTo(11, -8);
+    brush.lineTo(9, 3);
+    brush.quadraticCurveTo(7, 10, 0, 13);
+    brush.quadraticCurveTo(-7, 10, -9, 3);
+    brush.lineTo(-11, -8);
+    brush.closePath();
+    brush.stroke();
+    brush.beginPath();
+    brush.moveTo(-5, 0);
+    brush.lineTo(-1, 4);
+    brush.lineTo(6, -5);
+    brush.stroke();
+  } else if (kind === 'ball') {
+    brush.beginPath();
+    brush.moveTo(-13, -7);
+    brush.lineTo(-6, -7);
+    brush.moveTo(-15, 0);
+    brush.lineTo(-7, 0);
+    brush.moveTo(-12, 7);
+    brush.lineTo(-5, 7);
+    brush.stroke();
+    brush.beginPath();
+    brush.arc(5, 0, 9, 0, TAU);
+    brush.fill();
+  } else {
+    brush.beginPath();
+    brush.arc(0, 0, 4, 0, TAU);
+    brush.fill();
+    for (const angle of [-Math.PI / 2, Math.PI / 6, (5 * Math.PI) / 6]) {
+      const cosine = Math.cos(angle);
+      const sine = Math.sin(angle);
+      const sideX = -sine;
+      const sideY = cosine;
+      brush.beginPath();
+      brush.moveTo(cosine * 6, sine * 6);
+      brush.quadraticCurveTo(cosine * 14 + sideX * 5, sine * 14 + sideY * 5, cosine * 13, sine * 13);
+      brush.quadraticCurveTo(cosine * 11 - sideX * 4, sine * 11 - sideY * 4, cosine * 6, sine * 6);
+      brush.closePath();
+      brush.stroke();
+    }
+    brush.beginPath();
+    brush.arc(0, 0, 11, 0, TAU);
+    brush.setLineDash([2, 5]);
+    brush.globalAlpha = 0.55;
+    brush.stroke();
+    brush.globalAlpha = 1;
+    brush.setLineDash([]);
+  }
+}
+// 五格类型槽
+function drawSlots(brush: CanvasRenderingContext2D, world: World): void {
+  const half = SLOT_WALL / 2;
+  const head = world.counter.slots[0].lip + RAMP_RISE;
+  const foot = counterHeight;
+  for (const slot of world.counter.slots) {
+    const leftWall = wallFits(slot.left);
+    const rightWall = wallFits(slot.left + slot.width);
+    const accent = KIND_ACCENT[slot.kind];
+    const channelLeft = leftWall ? slot.left + half : 0;
+    const channelRight = rightWall ? slot.left + slot.width - half : counterWidth;
+    const lit = slot.flash > 0.05 && slot.lastTeam >= 0;
+    // 通道底
+    brush.beginPath();
+    brush.roundRect(channelLeft, head, channelRight - channelLeft, foot - head, 4);
+    brush.fillStyle = PALETTE.cavity;
+    brush.fill();
+    const shade = brush.createLinearGradient(0, head, 0, foot);
+    shade.addColorStop(0, withAlpha(INK, 0.24));
+    shade.addColorStop(0.42, withAlpha(INK, 0));
+    shade.addColorStop(1, withAlpha(INK, 0.08));
+    brush.fillStyle = shade;
+    brush.fill();
+    brush.strokeStyle = PALETTE.slotEdge;
+    brush.lineWidth = 1;
+    brush.stroke();
+    // 类型光门
+    const gate = brush.createLinearGradient(0, head, 0, head + 22);
+    gate.addColorStop(0, withAlpha(accent, lit ? 0.34 : 0.16));
+    gate.addColorStop(1, withAlpha(accent, 0));
+    brush.fillStyle = gate;
+    brush.fill();
+    // 侧壁
+    brush.strokeStyle = withAlpha(INK, 0.3);
+    brush.lineWidth = 1;
+    for (const wallX of leftWall ? [slot.left - half] : []) {
+      brush.beginPath();
+      brush.roundRect(wallX, head - 2, SLOT_WALL, foot - head + 2, 2);
+      brush.fillStyle = PALETTE.wall;
+      brush.fill();
+      brush.stroke();
+    }
+    for (const wallX of rightWall ? [slot.left + slot.width - half] : []) {
+      brush.beginPath();
+      brush.roundRect(wallX, head - 2, SLOT_WALL, foot - head + 2, 2);
+      brush.fillStyle = PALETTE.wall;
+      brush.fill();
+      brush.stroke();
+    }
+    // 壁内亮边
+    brush.fillStyle = PALETTE.wallLit;
+    if (leftWall) brush.fillRect(channelLeft, head, 1, foot - head);
+    if (rightWall) brush.fillRect(channelRight - 1, head, 1, foot - head);
+    // 触发唇与底板
+    brush.fillStyle = withAlpha(accent, 0.55);
+    brush.fillRect(channelLeft, slot.triggerY, channelRight - channelLeft, 1.6);
+    brush.fillStyle = withAlpha(INK, 0.32);
+    brush.fillRect(channelLeft, slot.bottom, channelRight - channelLeft, 1.4);
+    // 落地液面
+    if (lit) {
+      const channels = TINT[slot.lastTeam];
+      brush.save();
+      brush.beginPath();
+      brush.roundRect(channelLeft, head, channelRight - channelLeft, foot - head, 4);
+      brush.clip();
+      const litGradient = brush.createLinearGradient(0, slot.triggerY, 0, foot);
+      litGradient.addColorStop(0, withAlpha(channels, 0.34 + slot.flash * 0.24));
+      litGradient.addColorStop(1, withAlpha(channels, 0.1 + slot.flash * 0.14));
+      brush.fillStyle = litGradient;
+      brush.fillRect(channelLeft, slot.triggerY, channelRight - channelLeft, foot - slot.triggerY);
+      brush.restore();
+    }
+    // 图标
+    brush.save();
+    brush.translate(slot.left + slot.width / 2, slot.top - 34);
+    brush.beginPath();
+    brush.arc(0, 0, 16, 0, TAU);
+    brush.fillStyle = withAlpha(accent, 0.12);
+    brush.fill();
+    drawSlotIcon(brush, slot.kind);
+    brush.restore();
+    drawCount(brush, slot.left + slot.width / 2, slot.top - 5, `${slot.hits}`, `700 15px ${FONT}`, PALETTE.faint);
+  }
 }
 // 绘制次序
 export function renderCounter(view: View, world: World, alpha: number): void {
@@ -45,103 +255,55 @@ export function renderCounter(view: View, world: World, alpha: number): void {
     brush.fillStyle = gradient;
     brush.fillRect(0, 0, counterWidth, counterHeight);
   }
-  for (const centerX of [holeX(0), holeX(1)]) {
-    brush.beginPath();
-    brush.arc(centerX, HOLE_Y, HOLE_RADIUS + 4, 0, TAU);
-    brush.fillStyle = withAlpha(INK, 0.08);
-    brush.fill();
-    brush.beginPath();
-    brush.arc(centerX, HOLE_Y, HOLE_RADIUS, 0, TAU);
-    brush.fillStyle = PALETTE.cavity;
-    brush.fill();
-    const shade = brush.createLinearGradient(0, HOLE_Y - HOLE_RADIUS, 0, HOLE_Y + HOLE_RADIUS);
-    shade.addColorStop(0, withAlpha(INK, 0.28));
-    shade.addColorStop(0.6, withAlpha(INK, 0.02));
-    brush.fillStyle = shade;
-    brush.fill();
-    brush.beginPath();
-    brush.arc(centerX, HOLE_Y, HOLE_RADIUS, 0, TAU);
-    brush.strokeStyle = PALETTE.slotEdge;
-    brush.lineWidth = 1;
-    brush.stroke();
-    // 孔底提亮
-    brush.beginPath();
-    brush.arc(centerX, HOLE_Y, HOLE_RADIUS - 1.4, 0.45, Math.PI - 0.45);
-    brush.strokeStyle = withAlpha(RAISE, 0.85);
-    brush.lineWidth = 1.4;
-    brush.stroke();
+  for (const side of [0, 1] as const) {
+    const centerX = holeX(side);
+    let occupied: number | null = null;
     for (const ball of counter.balls) {
       if (ball.posY > HOLE_Y + 40 || Math.abs(ball.posX - centerX) > 40) continue;
-      brush.beginPath();
-      brush.arc(centerX, HOLE_Y, HOLE_RADIUS + 3.4, 0, TAU);
-      brush.strokeStyle = withAlpha(TINT[ball.team], 0.5);
-      brush.lineWidth = 2;
-      brush.stroke();
+      occupied = ball.team;
     }
+    drawHole(brush, world, centerX, occupied);
   }
   // 普通钉先立
-  for (const peg of counter.pegs) if (!peg.multiplier) drawPeg(brush, peg.posX, peg.posY, peg.radius);
+  for (const peg of counter.pegs) if (!peg.multiplier) brush.drawImage(view.pegArt, peg.posX - 16, peg.posY - 16, 32, 32);
   for (const peg of counter.pegs) {
     if (!peg.multiplier) continue;
     const lit = peg.flash > 0.05 && peg.lastTeam >= 0;
-    drawPeg(brush, peg.posX, peg.posY, peg.radius);
+    brush.drawImage(view.gemArt, peg.posX - 20, peg.posY - 20, 40, 40);
     if (lit) {
       brush.beginPath();
-      brush.arc(peg.posX, peg.posY, peg.radius - 0.6, 0, TAU);
-      brush.fillStyle = withAlpha(TINT[peg.lastTeam], 0.3 + peg.flash * 0.5);
+      brush.arc(peg.posX, peg.posY, peg.radius + 1.4, 0, TAU);
+      brush.fillStyle = withAlpha(TINT[peg.lastTeam], 0.34 + peg.flash * 0.5);
       brush.fill();
     }
-    // 只多一道环
+    const ringColor = lit ? TINT[peg.lastTeam] : INK;
     brush.beginPath();
-    brush.arc(peg.posX, peg.posY, peg.radius + 2.4, 0, TAU);
-    brush.strokeStyle = withAlpha(lit ? TINT[peg.lastTeam] : INK, lit ? 0.5 + peg.flash * 0.4 : 0.24);
+    brush.arc(peg.posX, peg.posY, peg.radius + 3.4, 0, TAU);
+    brush.strokeStyle = withAlpha(ringColor, lit ? 0.55 + peg.flash * 0.4 : 0.26);
     brush.lineWidth = 1.2;
     brush.stroke();
-  }
-  {
-    const { lip, top, triggerY } = counter.slots[0];
-    const foot = counterHeight;
-    const slotHead = lip + 1;
-    const gutter = 3;
-    // 底部共用基线
-    for (const slot of counter.slots) {
-      const lit = slot.flash > 0.05 && slot.lastTeam >= 0;
-      const left = slot.left + gutter;
-      const width = slot.width - gutter * 2;
+    if (lit) {
+      brush.setLineDash([2.4, 3.4]);
+      brush.lineDashOffset = -world.time * 26;
       brush.beginPath();
-      brush.roundRect(left, slotHead, width, foot - slotHead, 5);
-      brush.fillStyle = PALETTE.cavity;
-      brush.fill();
-      brush.strokeStyle = PALETTE.slotEdge;
-      brush.lineWidth = 1;
+      brush.arc(peg.posX, peg.posY, peg.radius + 6, 0, TAU);
+      brush.strokeStyle = withAlpha(TINT[peg.lastTeam], 0.7);
+      brush.lineWidth = 1.2;
       brush.stroke();
-      brush.save();
-      brush.beginPath();
-      brush.roundRect(left + 1, slotHead + 1, width - 2, foot - slotHead - 2, 4);
-      brush.clip();
-      if (lit) {
-        const channels = TINT[slot.lastTeam];
-        brush.fillStyle = withAlpha(channels, 0.07 + slot.flash * 0.13);
-        brush.fillRect(left, slotHead, width, foot - slotHead);
-        const litGradient = brush.createLinearGradient(0, triggerY, 0, foot);
-        litGradient.addColorStop(0, withAlpha(channels, 0.32 + slot.flash * 0.22));
-        litGradient.addColorStop(1, withAlpha(channels, 0.08 + slot.flash * 0.12));
-        brush.fillStyle = litGradient;
-        brush.fillRect(left, triggerY, width, foot - triggerY);
-      }
-      brush.restore();
-      // 凹槽与凸唇
-      brush.fillStyle = PALETTE.slotEdge;
-      brush.fillRect(left + 3, triggerY, width - 6, 1.5);
-      brush.fillStyle = PALETTE.wallLit;
-      brush.fillRect(left, slotHead, width, 1);
+      brush.setLineDash([]);
     }
   }
+  drawSlots(brush, world);
   drawEffects(brush, view, world.counterEffects);
   for (const ball of counter.balls) {
     const posX = interpolateX(ball, alpha);
     const posY = interpolateY(ball, alpha);
     const channels = TINT[ball.team];
+    // 球底光晕
+    const glowSize = ball.radius * 4.4;
+    brush.globalAlpha = 0.44;
+    brush.drawImage(view.glow[ball.team], posX - glowSize / 2, posY - glowSize / 2, glowSize, glowSize);
+    brush.globalAlpha = 1;
     if (ball.trail.length > 3) {
       // 尾迹分两档
       const fast = Math.hypot(ball.velX, ball.velY) > 240;
@@ -162,99 +324,18 @@ export function renderCounter(view: View, world: World, alpha: number): void {
     brush.rotate(-angle);
     brush.drawImage(view.ballArt[ball.team], -ball.radius, -ball.radius, ball.radius * 2, ball.radius * 2);
     brush.restore();
+    // 能量环
+    brush.beginPath();
+    brush.arc(posX, posY, ball.radius + 2.2, 0, TAU);
+    brush.strokeStyle = withAlpha(RAISE, 0.32);
+    brush.lineWidth = 1;
+    brush.stroke();
   }
   // 文字最后画
   for (const peg of counter.pegs) {
     if (!peg.multiplier) continue;
     const lit = peg.flash > 0.05 && peg.lastTeam >= 0;
-    drawCount(brush, peg.posX, peg.posY - peg.radius - 5, `×${peg.multiplier}`, `700 13px ${FONT}`, lit ? mixInk(TINT[peg.lastTeam]) : PALETTE.dim);
-  }
-  for (const slot of counter.slots) {
-    brush.save();
-    brush.translate(slot.left + slot.width / 2, slot.top - 35);
-    brush.strokeStyle = PALETTE.dim;
-    brush.fillStyle = PALETTE.dim;
-    brush.lineWidth = 2.4;
-    brush.lineCap = 'round';
-    brush.lineJoin = 'round';
-    brush.strokeStyle = PALETTE.dim;
-    brush.fillStyle = PALETTE.dim;
-    // 无框剪影
-    if (slot.kind === 'stream') {
-      brush.beginPath();
-      brush.moveTo(-13, -8);
-      brush.lineTo(-13, 8);
-      brush.stroke();
-      for (const [deltaX, radius] of [[-6, 2.2], [1, 2.8], [9, 3.5]] as const) {
-        brush.beginPath();
-        brush.arc(deltaX, 0, radius, 0, TAU);
-        brush.fill();
-      }
-    } else if (slot.kind === 'spin') {
-      brush.beginPath();
-      for (let index = 0; index <= 36; index++) {
-        const angle = (index / 36) * TAU * 1.35;
-        const radius = 1.8 + (index / 36) * 11;
-        const pointX = Math.cos(angle) * radius;
-        const pointY = Math.sin(angle) * radius;
-        if (index) brush.lineTo(pointX, pointY);
-        else brush.moveTo(pointX, pointY);
-      }
-      brush.stroke();
-      brush.beginPath();
-      brush.arc(Math.cos(TAU * 1.35) * 12.8, Math.sin(TAU * 1.35) * 12.8, 3.2, 0, TAU);
-      brush.fill();
-    } else if (slot.kind === 'shield') {
-      brush.beginPath();
-      brush.moveTo(0, -13);
-      brush.lineTo(11, -8);
-      brush.lineTo(9, 3);
-      brush.quadraticCurveTo(7, 10, 0, 13);
-      brush.quadraticCurveTo(-7, 10, -9, 3);
-      brush.lineTo(-11, -8);
-      brush.closePath();
-      brush.stroke();
-      brush.beginPath();
-      brush.moveTo(-5, 0);
-      brush.lineTo(-1, 4);
-      brush.lineTo(6, -5);
-      brush.stroke();
-    } else if (slot.kind === 'ball') {
-      brush.beginPath();
-      brush.moveTo(-13, -7);
-      brush.lineTo(-6, -7);
-      brush.moveTo(-15, 0);
-      brush.lineTo(-7, 0);
-      brush.moveTo(-12, 7);
-      brush.lineTo(-5, 7);
-      brush.stroke();
-      brush.beginPath();
-      brush.arc(5, 0, 9, 0, TAU);
-      brush.fill();
-    } else {
-      brush.beginPath();
-      brush.arc(0, 0, 4, 0, TAU);
-      brush.fill();
-      for (const angle of [-Math.PI / 2, Math.PI / 6, (5 * Math.PI) / 6]) {
-        const cosine = Math.cos(angle);
-        const sine = Math.sin(angle);
-        const sideX = -sine;
-        const sideY = cosine;
-        brush.beginPath();
-        brush.moveTo(cosine * 6, sine * 6);
-        brush.quadraticCurveTo(cosine * 14 + sideX * 5, sine * 14 + sideY * 5, cosine * 13, sine * 13);
-        brush.quadraticCurveTo(cosine * 11 - sideX * 4, sine * 11 - sideY * 4, cosine * 6, sine * 6);
-        brush.closePath();
-        brush.stroke();
-      }
-      brush.beginPath();
-      brush.arc(0, 0, 11, 0, TAU);
-      brush.setLineDash([2, 5]);
-      brush.globalAlpha = 0.45;
-      brush.stroke();
-    }
-    brush.restore();
-    drawCount(brush, slot.left + slot.width / 2, slot.top - 5, `${slot.hits}`, `700 15px ${FONT}`, PALETTE.faint);
+    drawCount(brush, peg.posX, peg.posY - 15, `×${peg.multiplier}`, `700 13px ${FONT}`, lit ? mixInk(TINT[peg.lastTeam]) : PALETTE.dim);
   }
   for (const ball of counter.balls) {
     const posX = interpolateX(ball, alpha);

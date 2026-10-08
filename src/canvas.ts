@@ -1,6 +1,6 @@
 // 画布共用层
-import { COLORS, TEAM } from './domain.ts';
-import type { Effects } from './domain.ts';
+import { COLORS, TEAM, baseCorner } from './domain.ts';
+import type { Effects, Kind } from './domain.ts';
 export const TAU = Math.PI * 2;
 export const FONT = '"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif';
 export const TINT = COLORS.map((color) => TEAM[color].channels);
@@ -37,6 +37,14 @@ export function triplet(value: string): [number, number, number] {
   const parsed = value.match(/[\d.]+/g) ?? [];
   return [Number(parsed[0]) || 0, Number(parsed[1]) || 0, Number(parsed[2]) || 0];
 }
+// 弹种辅助色
+export const KIND_ACCENT: Record<Kind, [number, number, number]> = {
+  spin: triplet('#ffd48a'),
+  stream: triplet('#d6ecff'),
+  shield: triplet('#9fe3ff'),
+  ball: triplet('#fff7e2'),
+  eater: triplet('#c7a6ff'),
+};
 // 带透明度
 export function withAlpha(channel: [number, number, number], alpha: number): string {
   return `rgba(${channel[0]},${channel[1]},${channel[2]},${alpha})`;
@@ -74,7 +82,10 @@ export interface View {
   image: ImageData | null;
   territorySource: Uint8ClampedArray | null;
   glow: HTMLCanvasElement[];
+  kindGlow: Record<Kind, HTMLCanvasElement>;
   ballArt: HTMLCanvasElement[];
+  pegArt: HTMLCanvasElement;
+  gemArt: HTMLCanvasElement;
 }
 // 画布表面
 function makeSurface(canvas: HTMLCanvasElement, logicalWidth: number, logicalHeight: number): Surface {
@@ -90,6 +101,105 @@ function makeLayer(width: number, height: number): Layer {
   const brush = canvas.getContext('2d');
   if (!brush) throw new Error('画布上下文创建失败');
   return { canvas, brush };
+}
+// 柔光圆斑
+function makeGlow(channels: [number, number, number], core: number, mid: number): HTMLCanvasElement {
+  const layer = makeLayer(64, 64);
+  const gradient = layer.brush.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gradient.addColorStop(0, withAlpha(channels, core));
+  gradient.addColorStop(0.3, withAlpha(channels, mid));
+  gradient.addColorStop(1, withAlpha(channels, 0));
+  layer.brush.fillStyle = gradient;
+  layer.brush.fillRect(0, 0, 64, 64);
+  return layer.canvas;
+}
+// 普通钉柱头
+function makePegArt(): HTMLCanvasElement {
+  const size = 32;
+  const center = size / 2;
+  const radius = 7;
+  const layer = makeLayer(size, size);
+  const brush = layer.brush;
+  brush.beginPath();
+  brush.ellipse(center, center + radius * 0.5, radius * 0.98, radius * 0.7, 0, 0, TAU);
+  brush.fillStyle = withAlpha(INK, 0.16);
+  brush.fill();
+  brush.beginPath();
+  brush.arc(center, center, radius + 0.4, 0, TAU);
+  brush.fillStyle = withAlpha(INK, 0.24);
+  brush.fill();
+  const metal = brush.createLinearGradient(center - radius, center - radius, center + radius, center + radius);
+  metal.addColorStop(0, PALETTE.wallLit);
+  metal.addColorStop(0.46, PALETTE.wall);
+  metal.addColorStop(1, PALETTE.lineStrong);
+  brush.beginPath();
+  brush.arc(center, center, radius, 0, TAU);
+  brush.fillStyle = metal;
+  brush.fill();
+  brush.lineWidth = 1;
+  brush.strokeStyle = withAlpha(INK, 0.3);
+  brush.stroke();
+  brush.beginPath();
+  brush.ellipse(center - radius * 0.24, center - radius * 0.3, radius * 0.44, radius * 0.22, -0.5, Math.PI, TAU);
+  brush.strokeStyle = withAlpha(RAISE, 0.8);
+  brush.lineWidth = 1.1;
+  brush.stroke();
+  brush.beginPath();
+  brush.arc(center, center, radius * 0.3, 0, TAU);
+  brush.fillStyle = withAlpha(RAISE, 0.45);
+  brush.fill();
+  return layer.canvas;
+}
+// 倍率钉宝石
+function makeGemArt(): HTMLCanvasElement {
+  const size = 40;
+  const center = size / 2;
+  const radius = 10;
+  const layer = makeLayer(size, size);
+  const brush = layer.brush;
+  const halo = brush.createRadialGradient(center, center, radius * 0.5, center, center, radius * 1.9);
+  halo.addColorStop(0, withAlpha(RAISE, 0.5));
+  halo.addColorStop(0.5, withAlpha(RAISE, 0.14));
+  halo.addColorStop(1, withAlpha(RAISE, 0));
+  brush.fillStyle = halo;
+  brush.fillRect(0, 0, size, size);
+  const vertex = (index: number, reach: number): [number, number] => [center + Math.cos((-Math.PI / 2) + (index * Math.PI) / 3) * reach, center + Math.sin((-Math.PI / 2) + (index * Math.PI) / 3) * reach];
+  const face = brush.createLinearGradient(center - radius, center - radius, center + radius, center + radius);
+  face.addColorStop(0, PALETTE.wallLit);
+  face.addColorStop(0.4, PALETTE.wall);
+  face.addColorStop(0.75, PALETTE.slotEdge);
+  face.addColorStop(1, PALETTE.lineStrong);
+  brush.beginPath();
+  for (let index = 0; index < 6; index++) {
+    const [pointX, pointY] = vertex(index, radius);
+    if (index) brush.lineTo(pointX, pointY);
+    else brush.moveTo(pointX, pointY);
+  }
+  brush.closePath();
+  brush.fillStyle = face;
+  brush.fill();
+  brush.lineWidth = 1.3;
+  brush.strokeStyle = withAlpha(INK, 0.62);
+  brush.stroke();
+  const inner: [number, number] = [center, center - radius * 0.22];
+  brush.strokeStyle = withAlpha(RAISE, 0.42);
+  brush.lineWidth = 1;
+  brush.beginPath();
+  for (let index = 0; index < 6; index++) {
+    const [pointX, pointY] = vertex(index, radius * 0.98);
+    brush.moveTo(inner[0], inner[1]);
+    brush.lineTo(pointX, pointY);
+  }
+  brush.stroke();
+  brush.beginPath();
+  brush.moveTo(center, center - radius * 0.78);
+  brush.lineTo(center + radius * 0.42, center - radius * 0.2);
+  brush.lineTo(center, center + radius * 0.18);
+  brush.lineTo(center - radius * 0.42, center - radius * 0.2);
+  brush.closePath();
+  brush.fillStyle = withAlpha(RAISE, 0.55);
+  brush.fill();
+  return layer.canvas;
 }
 // 整块补底
 export function clearSurface(surface: Surface, paint: string | CanvasGradient): void {
@@ -134,56 +244,111 @@ export function createView(boardCanvas: HTMLCanvasElement, counterCanvas: HTMLCa
     territory: null,
     image: null,
     territorySource: null,
-    glow: COLORS.map((color) => {
-      const layer = makeLayer(64, 64);
-      const gradient = layer.brush.createRadialGradient(32, 32, 0, 32, 32, 32);
-      gradient.addColorStop(0, withAlpha(TEAM[color].channels, 1));
-      gradient.addColorStop(0.3, withAlpha(TEAM[color].channels, 0.45));
-      gradient.addColorStop(1, withAlpha(TEAM[color].channels, 0));
-      layer.brush.fillStyle = gradient;
-      layer.brush.fillRect(0, 0, 64, 64);
-      return layer.canvas;
-    }),
+    glow: COLORS.map((color) => makeGlow(TEAM[color].channels, 1, 0.45)),
+    kindGlow: Object.fromEntries(Object.entries(KIND_ACCENT).map(([kind, channels]) => [kind, makeGlow(channels, 1, 0.28)])) as Record<Kind, HTMLCanvasElement>,
     ballArt: COLORS.map((color) => {
       const channels = TEAM[color].channels;
-      const layer = makeLayer(64, 64);
-      const light: [number, number, number] = [Math.min(255, channels[0] + 95), Math.min(255, channels[1] + 95), Math.min(255, channels[2] + 95)];
-      const shadowColor: [number, number, number] = [channels[0] * 0.3, channels[1] * 0.3, channels[2] * 0.3];
-      const gradient = layer.brush.createRadialGradient(25, 22, 1, 32, 32, 31);
-      gradient.addColorStop(0, 'rgba(255,255,255,0.98)');
-      gradient.addColorStop(0.2, withAlpha(light, 1));
-      gradient.addColorStop(0.7, withAlpha(channels, 1));
-      gradient.addColorStop(1, withAlpha(shadowColor, 1));
-      layer.brush.fillStyle = gradient;
-      layer.brush.beginPath();
-      layer.brush.arc(32, 32, 30, 0, TAU);
-      layer.brush.fill();
+      const size = 96;
+      const center = size / 2;
+      const layer = makeLayer(size, size);
+      const brush = layer.brush;
+      const light: [number, number, number] = [Math.min(255, channels[0] + 110), Math.min(255, channels[1] + 110), Math.min(255, channels[2] + 110)];
+      const deep: [number, number, number] = [channels[0] * 0.24, channels[1] * 0.24, channels[2] * 0.24];
+      const gradient = brush.createRadialGradient(center - 13, center - 16, 2, center, center, center - 3);
+      gradient.addColorStop(0, 'rgba(255,255,255,0.99)');
+      gradient.addColorStop(0.17, withAlpha(light, 1));
+      gradient.addColorStop(0.6, withAlpha(channels, 1));
+      gradient.addColorStop(0.87, withAlpha(deep, 1));
+      gradient.addColorStop(1, 'rgba(8,10,12,1)');
+      brush.beginPath();
+      brush.arc(center, center, center - 3, 0, TAU);
+      brush.fillStyle = gradient;
+      brush.fill();
+      // 底缘反光
+      brush.beginPath();
+      brush.arc(center, center, center - 8, 0.62, 1.95);
+      brush.strokeStyle = withAlpha(light, 0.92);
+      brush.lineWidth = 3.6;
+      brush.lineCap = 'round';
+      brush.stroke();
+      // 高光点
+      brush.beginPath();
+      brush.ellipse(center - 14, center - 17, 11, 7.5, -0.7, 0, TAU);
+      brush.fillStyle = 'rgba(255,255,255,0.92)';
+      brush.fill();
+      brush.beginPath();
+      brush.arc(center - 10, center - 12, 3.4, 0, TAU);
+      brush.fillStyle = 'rgba(255,255,255,1)';
+      brush.fill();
       return layer.canvas;
     }),
+    pegArt: makePegArt(),
+    gemArt: makeGemArt(),
   };
 }
 // 尺寸变就重烘
 export function resizeView(view: View, boardWidth: number, boardHeight: number): void {
   if (!view.ground || view.ground.width !== boardWidth || view.ground.height !== boardHeight) {
     const layer = makeLayer(boardWidth, boardHeight);
-    layer.brush.fillStyle = PALETTE.canvas;
-    layer.brush.fillRect(0, 0, boardWidth, boardHeight);
-    const grid = (allotment: number, color: string) => {
-      layer.brush.strokeStyle = color;
-      layer.brush.lineWidth = 1;
-      layer.brush.beginPath();
+    const scene = layer.brush;
+    scene.fillStyle = PALETTE.canvas;
+    scene.fillRect(0, 0, boardWidth, boardHeight);
+    // 中央暗角
+    const vignette = scene.createRadialGradient(boardWidth / 2, boardHeight / 2, Math.min(boardWidth, boardHeight) * 0.08, boardWidth / 2, boardHeight / 2, Math.max(boardWidth, boardHeight) * 0.66);
+    vignette.addColorStop(0, withAlpha(INK, 0));
+    vignette.addColorStop(0.68, withAlpha(INK, 0.05));
+    vignette.addColorStop(1, withAlpha(INK, 0.16));
+    scene.fillStyle = vignette;
+    scene.fillRect(0, 0, boardWidth, boardHeight);
+    const grid = (allotment: number, color: string, width: number) => {
+      scene.strokeStyle = color;
+      scene.lineWidth = width;
+      scene.beginPath();
       for (let index = 0; index <= boardWidth; index += allotment) {
-        layer.brush.moveTo(index + 0.5, 0);
-        layer.brush.lineTo(index + 0.5, boardHeight);
+        scene.moveTo(index + 0.5, 0);
+        scene.lineTo(index + 0.5, boardHeight);
       }
       for (let index = 0; index <= boardHeight; index += allotment) {
-        layer.brush.moveTo(0, index + 0.5);
-        layer.brush.lineTo(boardWidth, index + 0.5);
+        scene.moveTo(0, index + 0.5);
+        scene.lineTo(boardWidth, index + 0.5);
       }
-      layer.brush.stroke();
+      scene.stroke();
     };
-    grid(8, withAlpha(INK, 0.045));
-    grid(128, withAlpha(INK, 0.08));
+    grid(8, withAlpha(INK, 0.035), 1);
+    grid(64, withAlpha(INK, 0.05), 1);
+    grid(256, withAlpha(INK, 0.1), 1.4);
+    // 中心刻度
+    scene.strokeStyle = withAlpha(INK, 0.14);
+    scene.lineWidth = 1.4;
+    scene.beginPath();
+    scene.moveTo(boardWidth / 2, boardHeight / 2 - 26);
+    scene.lineTo(boardWidth / 2, boardHeight / 2 + 26);
+    scene.moveTo(boardWidth / 2 - 26, boardHeight / 2);
+    scene.lineTo(boardWidth / 2 + 26, boardHeight / 2);
+    scene.stroke();
+    for (const radius of [120, 240, 360]) {
+      scene.beginPath();
+      scene.arc(boardWidth / 2, boardHeight / 2, radius, 0, TAU);
+      scene.strokeStyle = withAlpha(INK, radius === 240 ? 0.1 : 0.06);
+      scene.setLineDash(radius === 240 ? [4, 7] : []);
+      scene.stroke();
+    }
+    scene.setLineDash([]);
+    // 四角基座垫
+    for (let team = 0; team < 4; team++) {
+      const corner = baseCorner(team);
+      const channels = TEAM[COLORS[team]].channels;
+      const halo = scene.createRadialGradient(corner.posX, corner.posY, 4, corner.posX, corner.posY, 96);
+      halo.addColorStop(0, withAlpha(channels, 0.13));
+      halo.addColorStop(1, withAlpha(channels, 0));
+      scene.fillStyle = halo;
+      scene.fillRect(corner.posX - 96, corner.posY - 96, 192, 192);
+      scene.beginPath();
+      scene.arc(corner.posX, corner.posY, 44, 0, TAU);
+      scene.strokeStyle = withAlpha(channels, 0.16);
+      scene.lineWidth = 1.4;
+      scene.stroke();
+    }
     view.ground = layer.canvas;
   }
   if (!view.territory || view.territory.canvas.width !== boardWidth || view.territory.canvas.height !== boardHeight) {
@@ -206,43 +371,78 @@ export function drawCount(brush: CanvasRenderingContext2D, posX: number, posY: n
 }
 // 特效抽样
 export function drawEffects(brush: CanvasRenderingContext2D, view: View, pool: Effects): void {
-  const paths = [new Path2D(), new Path2D(), new Path2D(), new Path2D()];
   const parts = pool.particles;
-  const stride = Math.max(1, Math.ceil(parts.length / 420));
+  const stride = Math.max(1, Math.ceil(parts.length / 460));
+  const sparks = [new Path2D(), new Path2D(), new Path2D(), new Path2D()];
+  const sparkles = [new Path2D(), new Path2D(), new Path2D(), new Path2D()];
+  const shards = [new Path2D(), new Path2D(), new Path2D(), new Path2D()];
   brush.save();
   brush.globalCompositeOperation = 'source-over';
   brush.lineCap = 'round';
+  // 晕层先铺
+  for (let index = 0; index < parts.length; index += stride) {
+    const particle = parts[index];
+    if (particle.kind !== 'glow' && particle.kind !== 'paint' && particle.kind !== 'ember') continue;
+    const life = particle.life / particle.maxLife;
+    const scale = particle.kind === 'glow' ? 5.4 : particle.kind === 'paint' ? 3.6 : 3.1;
+    const size = particle.radius * scale * (0.6 + life * 0.7);
+    brush.globalAlpha = Math.min(0.9, life * (particle.kind === 'ember' ? 0.55 : 0.72));
+    brush.drawImage(view.glow[particle.team], particle.posX - size / 2, particle.posY - size / 2, size, size);
+  }
+  brush.globalAlpha = 1;
+  // 批层构建
   for (let index = 0; index < parts.length; index += stride) {
     const particle = parts[index];
     const life = particle.life / particle.maxLife;
     if (particle.kind === 'spark') {
       const speed = Math.hypot(particle.velX, particle.velY) || 1;
-      const tailLength = 1.6 + Math.min(4, (speed / 900) * 3.2);
-      paths[particle.team].moveTo(particle.posX - (particle.velX / speed) * tailLength * 2, particle.posY - (particle.velY / speed) * tailLength * 2);
-      paths[particle.team].lineTo(particle.posX + (particle.velX / speed) * tailLength, particle.posY + (particle.velY / speed) * tailLength);
-    } else if (particle.kind === 'glow' || particle.kind === 'paint') {
-      const size = particle.radius * (particle.kind === 'glow' ? 5.4 : 3.6) * (0.6 + life * 0.7);
-      brush.globalAlpha = Math.min(0.9, life * 0.7);
-      brush.drawImage(view.glow[particle.team], particle.posX - size / 2, particle.posY - size / 2, size, size);
-    } else {
-      brush.globalAlpha = Math.min(1, life * 1.5);
-      brush.save();
-      brush.translate(particle.posX, particle.posY);
-      brush.rotate(particle.rotation);
-      brush.fillStyle = withAlpha(TINT[particle.team], 0.92);
-      brush.fillRect(-particle.radius * 0.5, -particle.radius * 0.5, particle.radius, particle.radius * 0.72);
-      brush.restore();
-      brush.globalAlpha = 1;
+      const tailLength = 1.6 + Math.min(4.4, (speed / 900) * 3.6);
+      sparks[particle.team].moveTo(particle.posX - (particle.velX / speed) * tailLength * 2, particle.posY - (particle.velY / speed) * tailLength * 2);
+      sparks[particle.team].lineTo(particle.posX + (particle.velX / speed) * tailLength, particle.posY + (particle.velY / speed) * tailLength);
+    } else if (particle.kind === 'sparkle') {
+      const reach = particle.radius * (0.7 + life * 1.1);
+      for (let point = 0; point < 8; point++) {
+        const angle = particle.rotation + (point * Math.PI) / 4;
+        const radius = point % 2 === 0 ? reach : reach * 0.3;
+        const pointX = particle.posX + Math.cos(angle) * radius;
+        const pointY = particle.posY + Math.sin(angle) * radius;
+        if (point) sparkles[particle.team].lineTo(pointX, pointY);
+        else sparkles[particle.team].moveTo(pointX, pointY);
+      }
+      sparkles[particle.team].closePath();
+    } else if (particle.kind === 'shard' || particle.kind === 'debris') {
+      const reach = particle.radius * (0.6 + life * 0.85);
+      const cosine = Math.cos(particle.rotation);
+      const sine = Math.sin(particle.rotation);
+      const shape = shards[particle.team];
+      const corners = [[0, -reach], [reach * 0.86, reach * 0.72], [-reach * 0.86, reach * 0.72]] as const;
+      for (let point = 0; point < 3; point++) {
+        const pointX = particle.posX + corners[point][0] * cosine - corners[point][1] * sine;
+        const pointY = particle.posY + corners[point][0] * sine + corners[point][1] * cosine;
+        if (point) shape.lineTo(pointX, pointY);
+        else shape.moveTo(pointX, pointY);
+      }
+      shape.closePath();
     }
   }
-  brush.globalAlpha = 1;
+  // 火花两遍描边
   for (let pass = 0; pass < 2; pass++) {
     brush.lineWidth = pass === 0 ? 2.6 : 1;
     for (let team = 0; team < 4; team++) {
       brush.strokeStyle = pass === 0 ? withAlpha(TINT[team], 0.9) : withAlpha(INK, 0.5);
-      brush.stroke(paths[team]);
+      brush.stroke(sparks[team]);
     }
   }
+  // 星芒与碎片
+  for (let team = 0; team < 4; team++) {
+    brush.fillStyle = withAlpha(TINT[team], 0.95);
+    brush.fill(sparkles[team]);
+    brush.fill(shards[team]);
+    brush.lineWidth = 0.8;
+    brush.strokeStyle = withAlpha(INK, 0.45);
+    brush.stroke(shards[team]);
+  }
+  // 冲击环
   for (const ringItem of pool.rings) {
     const life = ringItem.life / ringItem.maxLife;
     brush.globalAlpha = Math.min(1, life * 1.6);
@@ -250,6 +450,12 @@ export function drawEffects(brush: CanvasRenderingContext2D, view: View, pool: E
     brush.lineWidth = Math.max(0.6, ringItem.width * life);
     brush.beginPath();
     brush.arc(ringItem.posX, ringItem.posY, ringItem.radius, 0, TAU);
+    brush.stroke();
+    brush.globalAlpha = Math.min(0.7, life * 0.8);
+    brush.strokeStyle = withAlpha(RAISE, 0.7);
+    brush.lineWidth = Math.max(0.4, ringItem.width * life * 0.32);
+    brush.beginPath();
+    brush.arc(ringItem.posX, ringItem.posY, ringItem.radius * 0.86, 0, TAU);
     brush.stroke();
   }
   brush.globalAlpha = 1;

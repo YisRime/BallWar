@@ -106,7 +106,7 @@ export interface Particle {
   life: number;
   maxLife: number;
   team: number;
-  kind: 'spark' | 'glow' | 'debris' | 'paint';
+  kind: 'spark' | 'glow' | 'debris' | 'paint' | 'shard' | 'sparkle' | 'ember';
   gravity: number;
   drag: number;
   rotation: number;

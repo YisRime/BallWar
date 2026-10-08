@@ -127,6 +127,9 @@ export function InfoColumn({ controls }: { controls: GameControls }) {
           </span>
         </span>
         <div className="flex items-center gap-2">
+          <button className="button button--ghost" onClick={controls.togglePause} aria-label={controls.paused ? '继续' : '暂停'} title={controls.paused ? '继续' : '暂停'}>
+            <Icon path={controls.paused ? 'M8 5v14l11-7Z' : 'M9 5v14M15 5v14'} />
+          </button>
           <button className="button button--primary" onClick={controls.restart} aria-label="重开" title="重开">
             <Icon path="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5" />
           </button>
@@ -134,11 +137,6 @@ export function InfoColumn({ controls }: { controls: GameControls }) {
             <Icon path={dark ? 'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z' : 'M12 8a4 4 0 1 0 0 8 4 4 0 1 0 0-8ZM12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41'} />
           </button>
         </div>
-        {controls.diagnostics ? (
-          <span className="sr-only" role="status" aria-label={`诊断 ${controls.diagnostics}`}>
-            {controls.diagnostics}
-          </span>
-        ) : null}
       </div>
     </>
   );

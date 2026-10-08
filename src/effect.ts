@@ -6,6 +6,9 @@ const PHASE: Record<Particle['kind'], { radius: number; life: number; gravity: n
   glow: { radius: 9, life: 0.6, gravity: -0.12, drag: 2.4 },
   debris: { radius: 4.4, life: 1, gravity: 1, drag: 0.7 },
   paint: { radius: 2.2, life: 0.5, gravity: 0.35, drag: 1.2 },
+  shard: { radius: 5.2, life: 0.95, gravity: 1.15, drag: 0.62 },
+  sparkle: { radius: 5.6, life: 0.55, gravity: -0.05, drag: 1.5 },
+  ember: { radius: 2.6, life: 1.7, gravity: -0.42, drag: 0.55 },
 };
 // 撒相粒子
 export function burst(pool: Effects, kind: Particle['kind'], posX: number, posY: number, team: number, count: number, speed: number, radius?: number, life?: number): void {
