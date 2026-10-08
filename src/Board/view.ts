@@ -1,5 +1,5 @@
 // 领地区绘制
-import { BASE_GUARD, BASE_RADIUS, SHIELD_GAP, TEAM, baseCorner, boardHeight, boardWidth, formatCount, shieldReach } from '../domain.ts';
+import { BASE_GUARD, BASE_RADIUS, SHIELD_GAP, TEAM, TUNE, baseCorner, boardHeight, boardWidth, formatCount, shieldReach } from '../domain.ts';
 import type { Kind, World } from '../domain.ts';
 import { aim, nextKind } from './model.ts';
 import { FONT, INK, KIND_ACCENT, PALETTE, RAISE, TAU, TINT, clearSurface, drawEffects, interpolateX, interpolateY, mixInk, withAlpha } from '../canvas.ts';
@@ -174,10 +174,10 @@ function drawProjectiles(brush: CanvasRenderingContext2D, view: View, world: Wor
   brush.lineJoin = 'round';
   // 线段柔光球
   for (const orb of segmentOrbs) {
-    const bodySize = orb.kind === 'spin' ? 30 : 28;
+    const bodySize = (orb.kind === 'spin' ? 30 : 28) * TUNE.bulletSize;
     brush.globalAlpha = 0.82;
     brush.drawImage(view.glow[orb.team], orb.posX - bodySize / 2, orb.posY - bodySize / 2, bodySize, bodySize);
-    const coreSize = orb.kind === 'spin' ? 15 : 12;
+    const coreSize = (orb.kind === 'spin' ? 15 : 12) * TUNE.bulletSize;
     brush.globalAlpha = 0.9;
     brush.drawImage(view.kindGlow[orb.kind], orb.posX - coreSize / 2, orb.posY - coreSize / 2, coreSize, coreSize);
   }
@@ -224,6 +224,35 @@ function drawProjectiles(brush: CanvasRenderingContext2D, view: View, world: Wor
     brush.stroke(disks[team]);
   }
   brush.restore();
+}
+// 大球标数值
+function drawBallValues(brush: CanvasRenderingContext2D, world: World, alpha: number): void {
+  for (const baseBall of world.baseBalls) {
+    if (baseBall.dead || baseBall.form !== 'ball' || baseBall.value <= 1024) continue;
+    if (!world.bases[baseBall.team].alive) continue;
+    const posX = interpolateX(baseBall, alpha);
+    const posY = interpolateY(baseBall, alpha);
+    const text = formatCount(baseBall.value);
+    brush.save();
+    brush.font = `800 13px ${FONT}`;
+    const height = 16;
+    const padding = height / 3;
+    const textWidth = brush.measureText(text).width;
+    const left = posX - textWidth / 2 - padding;
+    const top = posY - height / 2;
+    brush.beginPath();
+    brush.roundRect(left, top, textWidth + padding * 2, height, Math.min(5, height / 3));
+    brush.fillStyle = withAlpha(RAISE, 1);
+    brush.fill();
+    brush.strokeStyle = PALETTE.lineStrong;
+    brush.lineWidth = 1;
+    brush.stroke();
+    brush.textAlign = 'center';
+    brush.textBaseline = 'middle';
+    brush.fillStyle = mixInk(TINT[baseBall.team]);
+    brush.fillText(text, posX, posY + 0.5);
+    brush.restore();
+  }
 }
 // 基地与炮塔
 function drawBase(brush: CanvasRenderingContext2D, world: World, team: number): void {
@@ -381,6 +410,7 @@ export function renderBoard(view: View, world: World, alpha: number): void {
   brush.drawImage(view.territory!.canvas, 0, 0, boardWidth, boardHeight);
   for (let team = 0; team < 4; team++) drawShield(brush, world, team, baseCorner(team));
   drawProjectiles(brush, view, world, alpha);
+  drawBallValues(brush, world, alpha);
   brush.restore();
   for (let team = 0; team < 4; team++) drawBase(brush, world, team);
   drawEffects(brush, view, world.boardEffects);

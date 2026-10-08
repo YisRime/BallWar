@@ -284,9 +284,11 @@ export interface Tune {
   tagCount: number;
   ballCount: number;
   unitPixels: number;
+  bulletSpeed: number;
+  bulletSize: number;
   initialAmmo: number;
 }
-export const TUNE_DEFAULT: Tune = { initialCarry: 3, jitter: 10, tagCount: 33, ballCount: 2, unitPixels: 4, initialAmmo: 10240 };
+export const TUNE_DEFAULT: Tune = { initialCarry: 3, jitter: 10, tagCount: 33, ballCount: 2, unitPixels: 4, bulletSpeed: 1, bulletSize: 1, initialAmmo: 10240 };
 export const TUNE: Tune = { ...TUNE_DEFAULT };
 // 挡位阶梯
 export function ladder(from: number, to: number, allotment: number): number[] {
@@ -304,10 +306,12 @@ export interface TuneSpec {
 export const TUNE_SPECS: TuneSpec[] = [
   { key: 'initialCarry', name: '每投初值', stops: [1, ...ladder(2, 64, 2)], text: (value) => `${value}` },
   { key: 'jitter', name: '撞钉扰动', stops: ladder(0, 45, 5), text: (value) => `±${value}°` },
-  { key: 'tagCount', name: '倍率钉数', stops: ladder(5, 97, 4), text: (value) => `${value} 枚` },
   { key: 'ballCount', name: '每色球数', stops: ladder(1, 8, 1), text: (value) => `${value} 颗` },
+  { key: 'tagCount', name: '倍率钉数', stops: ladder(5, 97, 4), text: (value) => `${value} 枚` },
   { key: 'unitPixels', name: '单值像素', stops: ladder(1, 64, 1), text: (value) => `${value}` },
   { key: 'initialAmmo', name: '初始数值', stops: [...ladder(0, 1020 * 1024, 10240), 1024 * 1024], text: (value) => formatCount(value) },
+  { key: 'bulletSpeed', name: '子弹速度', stops: ladder(0.1, 2, 0.1), text: (value) => `×${value}` },
+  { key: 'bulletSize', name: '子弹体积', stops: ladder(0.5, 5, 0.5), text: (value) => `×${value}` },
 ];
 // 定步长率
 export const STEP_SEC = 1 / 120;

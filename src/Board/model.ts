@@ -8,8 +8,8 @@ const SEGMENT_RADIUS = 3;
 const BALL_POSE = { radius: 0, speed: 0 };
 function ballPose(value: number): typeof BALL_POSE {
   const ratio = Math.min(1, Math.sqrt(Math.max(1, value)) / Math.sqrt(4096));
-  BALL_POSE.radius = ORB_RADIUS_MIN + (ORB_RADIUS_MAX - ORB_RADIUS_MIN) * ratio;
-  BALL_POSE.speed = 300 * (0.42 + (1 - 0.42) * (1 - ratio));
+  BALL_POSE.radius = (ORB_RADIUS_MIN + (ORB_RADIUS_MAX - ORB_RADIUS_MIN) * ratio) * TUNE.bulletSize;
+  BALL_POSE.speed = 300 * (0.42 + (1 - 0.42) * (1 - ratio)) * TUNE.bulletSpeed;
   return BALL_POSE;
 }
 // 信用耗尽即死
@@ -300,7 +300,7 @@ export function stepFiring(world: World): void {
     const isBall = kindInfo.form === 'ball';
     const pose = isBall ? ballPose(value) : null;
     const ang = aim(world, team);
-    const speed = pose ? pose.speed : kindInfo.speed;
+    const speed = pose ? pose.speed : kindInfo.speed * TUNE.bulletSpeed;
     world.spawned++;
     world.baseBalls.push({
       id: world.nextId++,
@@ -313,7 +313,7 @@ export function stepFiring(world: World): void {
       prevY: corner.posY,
       velX: Math.cos(ang) * speed,
       velY: Math.sin(ang) * speed,
-      radius: pose ? pose.radius : SEGMENT_RADIUS,
+      radius: pose ? pose.radius : SEGMENT_RADIUS * TUNE.bulletSize,
       value,
       dead: false,
     });
@@ -342,7 +342,7 @@ function strike(world: World, baseBall: BaseBall): boolean {
     const distance = Math.max(1e-3, Math.sqrt(distanceSquared));
     const normalX = deltaX / distance;
     const normalY = deltaY / distance;
-    const bite = Math.min(base.guard, baseBall.value);
+    const bite = baseBall.value > 1024 ? baseBall.value / 2 : baseBall.value;
     base.guard -= bite;
     baseBall.value = Math.max(0, baseBall.value - bite);
     const normalSpeed = baseBall.velX * normalX + baseBall.velY * normalY;
@@ -364,7 +364,7 @@ function strike(world: World, baseBall: BaseBall): boolean {
 }
 // 沿折线盖章
 function stampPath(world: World, baseBall: BaseBall, ax: number, ay: number, bx: number, by: number): void {
-  const radius = baseBall.form === 'ball' ? baseBall.radius : KIND_INFO[baseBall.kind].reach;
+  const radius = baseBall.form === 'ball' ? baseBall.radius : KIND_INFO[baseBall.kind].reach * TUNE.bulletSize;
   const span = Math.hypot(bx - ax, by - ay);
   const stamps = Math.max(1, Math.ceil(span / Math.max(2, radius * 0.9)));
   for (let stampIndex = 1; stampIndex <= stamps; stampIndex++) {
@@ -373,20 +373,20 @@ function stampPath(world: World, baseBall: BaseBall, ax: number, ay: number, bx:
     if (outOfCredit(baseBall)) return;
   }
 }
-// 异色互削
+// 全体球互撞反弹
 const COLLIDE_CELL = 36;
 function collideBalls(world: World): void {
   const balls = world.baseBalls;
   const cells = new Map<number, BaseBall[]>();
   for (const baseBall of balls) {
-    if (baseBall.dead) continue;
+    if (baseBall.dead || baseBall.form !== 'ball') continue;
     const key = (((baseBall.posX / COLLIDE_CELL) | 0) * 100003) + ((baseBall.posY / COLLIDE_CELL) | 0);
     const bucket = cells.get(key);
     if (bucket) bucket.push(baseBall);
     else cells.set(key, [baseBall]);
   }
   for (const baseBall of balls) {
-    if (baseBall.dead) continue;
+    if (baseBall.dead || baseBall.form !== 'ball') continue;
     const cellX = (baseBall.posX / COLLIDE_CELL) | 0;
     const cellY = (baseBall.posY / COLLIDE_CELL) | 0;
     for (let gridX = cellX - 1; gridX <= cellX + 1; gridX++) {
@@ -394,23 +394,36 @@ function collideBalls(world: World): void {
         const bucket = cells.get(gridX * 100003 + gridY);
         if (!bucket) continue;
         for (const other of bucket) {
-          if (other.dead || other === baseBall || other.team === baseBall.team || other.id < baseBall.id) continue;
+          if (other.dead || other === baseBall || other.form !== 'ball' || other.id < baseBall.id) continue;
           const deltaX = baseBall.posX - other.posX;
           const deltaY = baseBall.posY - other.posY;
           const reach = baseBall.radius + other.radius + 2;
-          if (deltaX * deltaX + deltaY * deltaY > reach * reach) continue;
-          const bite = Math.min(baseBall.value, other.value);
-          baseBall.value = Math.max(0, baseBall.value - bite);
-          other.value = Math.max(0, other.value - bite);
-          burst(world.boardEffects, 'spark', (baseBall.posX + other.posX) / 2, (baseBall.posY + other.posY) / 2, baseBall.team, 2, 200);
-          if (outOfCredit(baseBall)) break;
+          const distanceSquared = deltaX * deltaX + deltaY * deltaY;
+          if (distanceSquared > reach * reach) continue;
+          const distance = Math.max(1e-3, Math.sqrt(distanceSquared));
+          const normalX = deltaX / distance;
+          const normalY = deltaY / distance;
+          // 先分离再换速
+          const overlap = (reach - distance) * 0.5;
+          baseBall.posX += normalX * overlap;
+          baseBall.posY += normalY * overlap;
+          other.posX -= normalX * overlap;
+          other.posY -= normalY * overlap;
+          const relativeSpeed = (baseBall.velX - other.velX) * normalX + (baseBall.velY - other.velY) * normalY;
+          if (relativeSpeed < 0) {
+            const massA = Math.max(1, baseBall.radius * baseBall.radius);
+            const massB = Math.max(1, other.radius * other.radius);
+            const impulse = (-2 * relativeSpeed) / (1 / massA + 1 / massB);
+            baseBall.velX += (impulse / massA) * normalX;
+            baseBall.velY += (impulse / massA) * normalY;
+            other.velX -= (impulse / massB) * normalX;
+            other.velY -= (impulse / massB) * normalY;
+            if (relativeSpeed < -80 && Math.random() < 0.5) burst(world.boardEffects, 'spark', (baseBall.posX + other.posX) / 2, (baseBall.posY + other.posY) / 2, baseBall.team, 1, 160);
+          }
         }
-        if (outOfCredit(baseBall)) break;
       }
-      if (outOfCredit(baseBall)) break;
     }
   }
-  for (const baseBall of balls) if (!baseBall.dead && outOfCredit(baseBall)) baseBall.dead = true;
 }
 // 线段与球同律
 export function stepBalls(world: World, stepSec: number): void {
@@ -418,7 +431,7 @@ export function stepBalls(world: World, stepSec: number): void {
     if (baseBall.dead) continue;
     // 先定半径
     if (baseBall.form === 'ball') baseBall.radius = ballPose(baseBall.value).radius;
-    else baseBall.radius = SEGMENT_RADIUS;
+    else baseBall.radius = SEGMENT_RADIUS * TUNE.bulletSize;
     const radius = baseBall.radius;
     baseBall.prevX = baseBall.posX;
     baseBall.prevY = baseBall.posY;
